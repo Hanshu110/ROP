@@ -1,9 +1,11 @@
-streamlit
+# Core ML
 torch
 torchvision
-pillow
 numpy
+pillow
 matplotlib
+
+# Web Framework
 fastapi
-uvicorn
+uvicorn[standard]
 python-multipart
