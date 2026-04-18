@@ -72,6 +72,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.success) {
                 showResults(data);
+            } else if (data.not_retinal) {
+                showNotRetinalWarning(data.error);
             } else {
                 showError(data.error || 'Analysis failed. Please try again.');
             }
@@ -270,6 +272,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
         resultsSection.classList.remove('hidden');
         lucide.createIcons();
+    }
+
+    // Show non-retinal image warning
+    function showNotRetinalWarning(message) {
+        resultsSection.innerHTML = `
+            <div class="result-card glass-card rounded-3xl p-8">
+                <div class="flex items-center gap-5 mb-6">
+                    <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500/20 to-yellow-500/20 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="eye-off" class="w-8 h-8 text-amber-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-semibold mb-1 text-amber-400">Not a Retinal Image</h3>
+                        <p class="text-gray-400 text-sm">${message}</p>
+                    </div>
+                </div>
+                <div class="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/30 mb-6">
+                    <div class="flex items-start gap-3">
+                        <i data-lucide="info" class="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5"></i>
+                        <p class="text-sm text-amber-200/80 leading-relaxed">
+                            This system is designed exclusively for <strong>retinal fundus images</strong> used in ROP (Retinopathy of Prematurity) screening.
+                            Uploading non-retinal images can lead to meaningless predictions. Please upload a proper fundus photograph.
+                        </p>
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <button onclick="location.reload()" class="glow-btn px-6 py-3 rounded-xl font-medium flex items-center gap-2">
+                        <i data-lucide="upload" class="w-5 h-5"></i>
+                        Upload Retinal Image
+                    </button>
+                </div>
+            </div>
+        `;
+        resultsSection.classList.remove('hidden');
+        lucide.createIcons();
+        resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     // Download report function
