@@ -49,6 +49,46 @@ def find_target_layer(module):
 
 target_layer = find_target_layer(model)
 
+# ---------- Retinal Image Validator ----------
+def is_retinal_image(image: Image.Image, threshold: float = 0.25) -> bool:
+    """
+    Heuristic check: retinal fundus images are predominantly reddish/orange.
+    Converts image to HSV and checks whether enough pixels fall in the
+    red/orange hue range (H in [0,30] or [330,360] degrees).
+    Returns False if the image is unlikely to be a retinal scan.
+    """
+    img_rgb = np.array(image.resize((128, 128))).astype(np.float32) / 255.0
+    # Convert to HSV manually
+    r, g, b = img_rgb[:, :, 0], img_rgb[:, :, 1], img_rgb[:, :, 2]
+    maxc = np.maximum(np.maximum(r, g), b)
+    minc = np.minimum(np.minimum(r, g), b)
+    delta = maxc - minc
+
+    # Compute hue (degrees 0-360)
+    hue = np.zeros_like(maxc)
+    mask = delta > 0
+    # Red dominant
+    idx = mask & (maxc == r)
+    hue[idx] = (60 * ((g[idx] - b[idx]) / delta[idx])) % 360
+    # Green dominant
+    idx = mask & (maxc == g)
+    hue[idx] = 60 * ((b[idx] - r[idx]) / delta[idx]) + 120
+    # Blue dominant
+    idx = mask & (maxc == b)
+    hue[idx] = 60 * ((r[idx] - g[idx]) / delta[idx]) + 240
+
+    saturation = np.where(maxc > 0, delta / maxc, 0)
+    value = maxc
+
+    # Pixels that are sufficiently saturated and bright
+    valid = (saturation > 0.2) & (value > 0.1)
+    red_orange = valid & ((hue <= 35) | (hue >= 330))
+
+    if valid.sum() == 0:
+        return False
+    ratio = red_orange.sum() / valid.sum()
+    return float(ratio) >= threshold
+
 # ---------- Preprocessing ----------
 transform = transforms.Compose([
     transforms.Resize((INPUT_SIZE, INPUT_SIZE)),
@@ -96,6 +136,9 @@ class GradCAM:
 
         return cam.cpu().numpy(), idx, confidence
 
+# ---------- Singleton GradCAM (created once to avoid hook accumulation) ----------
+grad_cam = GradCAM(model, target_layer)
+
 # ---------- FastAPI App ----------
 app = FastAPI(
     title="ROP Detection",
@@ -119,11 +162,20 @@ async def predict(file: UploadFile = File(...)):
         # Read and process image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
-        
-        # Run inference
+
+        # Validate that the image looks like a retinal fundus image
+        if not is_retinal_image(image):
+            return JSONResponse({
+                "success": False,
+                "not_retinal": True,
+                "error": "The uploaded image does not appear to be a retinal fundus image. "
+                         "Please upload a valid retinal scan for accurate ROP detection."
+            }, status_code=422)
+
+        # Run inference using the singleton GradCAM instance
         inp = transform(image).unsqueeze(0).to(DEVICE)
-        cam_np, idx, confidence = GradCAM(model, target_layer)(inp)
-        
+        cam_np, idx, confidence = grad_cam(inp)
+
         diagnosis = LABEL_MAP[idx]
         color = SEVERITY_COLORS[diagnosis]
         
